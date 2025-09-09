@@ -41,3 +41,44 @@ if __name__ == "__main__":
     create_topic()
     produce_messages()
     
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, from_json
+from utils.schema import weather_schema
+
+TOPIC_NAME = "weather_data"
+BOOTSTRAP_SERVERS = "localhost:9092"
+
+if __name__ == "__main__":
+    spark = SparkSession.builder \
+        .appName("WeatherConsumer") \
+        .master("local[*]") \
+        .getOrCreate()
+
+    spark.sparkContext.setLogLevel("WARN")
+
+    # Read stream from Kafka
+    df = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", BOOTSTRAP_SERVERS) \
+        .option("subscribe", TOPIC_NAME) \
+        .option("startingOffsets", "earliest") \
+        .load()
+
+    # Extract JSON value
+    df_parsed = df.selectExpr("CAST(value AS STRING)") \
+        .select(from_json(col("value"), weather_schema).alias("data")) \
+        .select("data.*")
+
+    # Deduplicate using reading_id
+    df_unique = df_parsed.dropDuplicates(["reading_id"])
+
+    # Write to console (Milestone 1 output)
+    query = df_unique.writeStream \
+        .outputMode("append") \
+        .format("console") \
+        .option("truncate", False) \
+        .option("checkpointLocation", "/tmp/spark-checkpoints/weather") \
+        .start()
+
+    query.awaitTermination()
+    
