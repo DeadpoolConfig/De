@@ -81,4 +81,19 @@ if __name__ == "__main__":
         .start()
 
     query.awaitTermination()
+
+    from pyspark.sql.types import StructType, StructField, StringType, TimestampType, IntegerType
+
+weather_schema = StructType([
+    StructField("reading_id", IntegerType(), False),
+    StructField("station_id", StringType(), True),
+    StructField("temperature", StringType(), True),
+    StructField("humidity", StringType(), True),
+    StructField("wind_speed", StringType(), True),
+    StructField("precipitation", StringType(), True),
+    StructField("pressure", StringType(), True),
+    StructField("reading_timestamp", TimestampType(), True),
+    StructField("location", StringType(), True)
+])
+
     
