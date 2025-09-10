@@ -1,103 +1,185 @@
 # =================================================================
-# TASK 3.1: BRONZE LAYER - TEMPORARY DELTA TABLES + VIEWS
+# TASK 3.2: SILVER LAYER - ACCESS TEMP TABLES & CREATE CLEANED DATA
 # =================================================================
 
 from pyspark.sql import SparkSession
 
 spark = SparkSession.builder \
-    .appName("TechFlight-Task3.1-Bronze-TempTables") \
+    .appName("TechFlight-Task3.2-Silver-TempTables") \
     .getOrCreate()
 
-print("=== TASK 3.1: BRONZE LAYER WITH TEMPORARY DELTA TABLES ===")
+print("=== TASK 3.2: SILVER LAYER - CLEANED & CONFORMED DATA ===")
 
 # =================================================================
-# STEP 1: UNITY CATALOG SETUP
+# STEP 1: SETUP SILVER SCHEMA
 # =================================================================
 
 spark.sql("USE CATALOG techflight_catalog")
 spark.sql("""
-    CREATE SCHEMA IF NOT EXISTS bronze_schema
-    COMMENT 'Bronze layer for raw data - Medallion Architecture'
+    CREATE SCHEMA IF NOT EXISTS silver_schema  
+    COMMENT 'Silver layer for cleaned data - Medallion Architecture'
 """)
-spark.sql("USE SCHEMA bronze_schema")
+spark.sql("USE SCHEMA silver_schema")
 
 # =================================================================
-# STEP 2: LOAD CSV FILES INTO DATAFRAMES (REQUIREMENT)
+# STEP 2: ACCESS BRONZE TEMPORARY DELTA TABLES
 # =================================================================
 
-VOLUME_PATH = "/Volumes/techflight_catalog/bronze_schema/your_volume_name"
+print("Accessing Bronze temporary Delta tables...")
 
-print("Loading CSV files into DataFrames with schema inference...")
+# Verify Bronze temp tables are accessible
+print("Available Bronze temporary tables:")
+spark.sql("SHOW TABLES IN techflight_catalog.bronze_schema LIKE 'temp_bronze_*'").show()
 
-# Load DataFrames (Assignment Requirement)
-flights_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/flights.csv")
-bookings_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/bookings.csv")
-passengers_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/passengers.csv")
-carriers_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/carriers.csv")
-airports_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/airports.csv")
+# Create temporary views from Bronze temp tables for SQL operations
+spark.sql("CREATE OR REPLACE TEMPORARY VIEW bronze_flights AS SELECT * FROM techflight_catalog.bronze_schema.temp_bronze_flights")
+spark.sql("CREATE OR REPLACE TEMPORARY VIEW bronze_bookings AS SELECT * FROM techflight_catalog.bronze_schema.temp_bronze_bookings")
+spark.sql("CREATE OR REPLACE TEMPORARY VIEW bronze_passengers AS SELECT * FROM techflight_catalog.bronze_schema.temp_bronze_passengers")
+spark.sql("CREATE OR REPLACE TEMPORARY VIEW bronze_carriers AS SELECT * FROM techflight_catalog.bronze_schema.temp_bronze_carriers")
+spark.sql("CREATE OR REPLACE TEMPORARY VIEW bronze_airports AS SELECT * FROM techflight_catalog.bronze_schema.temp_bronze_airports")
 
-print("✅ All DataFrames created with schema inference")
-
-# =================================================================
-# STEP 3: DISPLAY SCHEMAS (REQUIREMENT)
-# =================================================================
-
-print("\n--- SCHEMA INFERENCE RESULTS ---")
-print("Flights Schema:")
-flights_df.printSchema()
-print("Bookings Schema:")
-bookings_df.printSchema()
+print("✅ Bronze data accessible via temporary views")
 
 # =================================================================
-# STEP 4: CREATE TEMPORARY DELTA TABLES FOR CROSS-NOTEBOOK ACCESS
+# STEP 3: SILVER LAYER TRANSFORMATIONS
 # =================================================================
 
-print("\nCreating temporary Delta tables for Silver layer access...")
+print("\nApplying Silver layer transformations...")
 
-# Create temporary Delta tables (will be accessible by table name)
-flights_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_flights")
-bookings_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_bookings")
-passengers_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_passengers")
-carriers_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_carriers")
-airports_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_airports")
+# Clean Flights data using Spark SQL
+spark.sql("""
+    CREATE OR REPLACE TEMPORARY VIEW silver_flights AS
+    SELECT 
+        flight_id,
+        CAST(departure_time AS TIMESTAMP) AS departure_time,
+        CAST(arrival_time AS TIMESTAMP) AS arrival_time,
+        origin_airport,
+        destination_airport,
+        carrier_code,
+        CAST(delay_minutes AS INT) AS delay_minutes,
+        CAST(distance AS FLOAT) AS distance,
+        COALESCE(status, 'Unknown') AS status
+    FROM bronze_flights
+    WHERE distance > 0 
+      AND flight_id IS NOT NULL
+      AND origin_airport IS NOT NULL 
+      AND destination_airport IS NOT NULL
+""")
 
-print("✅ Temporary Delta tables created:")
-print("   • temp_bronze_flights")
-print("   • temp_bronze_bookings") 
-print("   • temp_bronze_passengers")
-print("   • temp_bronze_carriers")
-print("   • temp_bronze_airports")
+# Clean Bookings data
+spark.sql("""
+    CREATE OR REPLACE TEMPORARY VIEW silver_bookings AS
+    SELECT 
+        booking_id,
+        passenger_id,
+        flight_id,
+        CAST(booking_date AS DATE) AS booking_date,
+        CAST(price AS DECIMAL(10,2)) AS price,
+        COALESCE(fare_class, 'Unknown') AS fare_class,
+        COALESCE(check_in_method, 'Unknown') AS check_in_method,
+        CAST(baggage_count AS INT) AS baggage_count
+    FROM bronze_bookings
+    WHERE booking_id IS NOT NULL
+      AND passenger_id IS NOT NULL
+      AND flight_id IS NOT NULL
+      AND price > 0
+""")
+
+# Clean Passengers data
+spark.sql("""
+    CREATE OR REPLACE TEMPORARY VIEW silver_passengers AS
+    SELECT 
+        passenger_id,
+        passenger_name,
+        CASE 
+            WHEN age IS NULL OR age < 0 THEN 0 
+            WHEN age > 150 THEN 0
+            ELSE CAST(age AS INT) 
+        END AS age,
+        CASE 
+            WHEN LOWER(gender) IN ('m', 'male') THEN 'Male'
+            WHEN LOWER(gender) IN ('f', 'female') THEN 'Female'
+            ELSE 'Unknown'
+        END AS gender,
+        COALESCE(nationality, 'Unknown') AS nationality
+    FROM bronze_passengers
+    WHERE passenger_id IS NOT NULL
+      AND passenger_name IS NOT NULL
+""")
+
+# Clean Carriers and Airports
+spark.sql("""
+    CREATE OR REPLACE TEMPORARY VIEW silver_carriers AS
+    SELECT 
+        carrier_code,
+        carrier_name,
+        COALESCE(country, 'Unknown') AS country
+    FROM bronze_carriers
+    WHERE carrier_code IS NOT NULL AND carrier_name IS NOT NULL
+""")
+
+spark.sql("""
+    CREATE OR REPLACE TEMPORARY VIEW silver_airports AS
+    SELECT 
+        airport_code,
+        airport_name,
+        city,
+        COALESCE(country, 'Unknown') AS country,
+        CAST(latitude AS FLOAT) AS latitude,
+        CAST(longitude AS FLOAT) AS longitude
+    FROM bronze_airports
+    WHERE airport_code IS NOT NULL AND airport_name IS NOT NULL
+""")
+
+print("✅ Silver transformations completed")
 
 # =================================================================
-# STEP 5: CREATE TEMPORARY VIEWS (REQUIREMENT)
+# STEP 4: CREATE TEMPORARY DELTA TABLES FOR ANALYTICS LAYER
 # =================================================================
 
-print("\nCreating temporary views for inspection...")
+print("\nCreating Silver temporary Delta tables for Analytics layer...")
 
-# Create temporary views from DataFrames (Assignment requirement)
-flights_df.createOrReplaceTempView("bronze_flights")
-bookings_df.createOrReplaceTempView("bronze_bookings")
-passengers_df.createOrReplaceTempView("bronze_passengers")
-carriers_df.createOrReplaceTempView("bronze_carriers")
-airports_df.createOrReplaceTempView("bronze_airports")
+# Save Silver views as temporary Delta tables for Task 3.3
+silver_flights_df = spark.sql("SELECT * FROM silver_flights")
+silver_bookings_df = spark.sql("SELECT * FROM silver_bookings")
+silver_passengers_df = spark.sql("SELECT * FROM silver_passengers")
+silver_carriers_df = spark.sql("SELECT * FROM silver_carriers")
+silver_airports_df = spark.sql("SELECT * FROM silver_airports")
 
-print("✅ Temporary views created for inspection")
+# Create temporary Silver Delta tables
+silver_flights_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_silver_flights")
+silver_bookings_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_silver_bookings")
+silver_passengers_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_silver_passengers")
+silver_carriers_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_silver_carriers")
+silver_airports_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_silver_airports")
 
-# Verify views
-spark.sql("SHOW VIEWS LIKE 'bronze_*'").show()
-
-# =================================================================
-# STEP 6: SAMPLE DATA DISPLAY (DELIVERABLE)
-# =================================================================
-
-print("\n--- RAW DATA SAMPLES ---")
-print("Bronze Flights Sample:")
-spark.sql("SELECT * FROM bronze_flights LIMIT 3").show(truncate=False)
-
-print("Bronze Bookings Sample:")
-spark.sql("SELECT * FROM bronze_bookings LIMIT 3").show(truncate=False)
+print("✅ Silver temporary Delta tables created for Analytics layer")
 
 # =================================================================
+# STEP 5: VALIDATION
+# =================================================================
+
+print("\n--- SILVER LAYER VALIDATION ---")
+spark.sql("""
+    SELECT 'silver_flights' as dataset, COUNT(*) as clean_records FROM temp_silver_flights
+    UNION ALL
+    SELECT 'silver_bookings' as dataset, COUNT(*) as clean_records FROM temp_silver_bookings
+    UNION ALL
+    SELECT 'silver_passengers' as dataset, COUNT(*) as clean_records FROM temp_silver_passengers
+    UNION ALL
+    SELECT 'silver_carriers' as dataset, COUNT(*) as clean_records FROM temp_silver_carriers
+    UNION ALL
+    SELECT 'silver_airports' as dataset, COUNT(*) as clean_records FROM temp_silver_airports
+""").show()
+
+# Sample cleaned data
+print("Silver Flights Sample:")
+spark.sql("SELECT * FROM silver_flights LIMIT 3").show(truncate=False)
+
+print("\n🎉 TASK 3.2 COMPLETED!")
+print("✅ Bronze data accessed from temporary Delta tables")
+print("✅ Silver transformations applied (cleaning, validation, enrichment)")
+print("✅ Silver temporary Delta tables created for Analytics layer")
 # STEP 7: VERIFICATION
 # =================================================================
 
