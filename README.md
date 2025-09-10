@@ -1,231 +1,127 @@
-dont do like this magic magic give me the task 3.1 again creating the global tempvire with spark.sql
-
-You're right! Let me provide **Task 3.1 implementation using only `spark.sql()` commands** without the magic commands, creating global temporary views properly.
-
-# Task 3.1: Bronze Layer - Raw Data Ingestion (Pure spark.sql Implementation)
-
-## **Bronze Layer Notebook: `bronze_layer`**
-
-```python
 # =================================================================
-# TASK 3.1: BRONZE LAYER - RAW DATA INGESTION
-# =================================================================
-# Objective: Load CSV files into DataFrames and create global temporary views
-# Requirements: Use spark.sql() for all operations, global temp views for cross-notebook access
+# TASK 3.1: BRONZE LAYER - TEMPORARY DELTA TABLES + VIEWS
 # =================================================================
 
 from pyspark.sql import SparkSession
 
-# Initialize Spark Session
 spark = SparkSession.builder \
-    .appName("TechFlight-Task3.1-Bronze-GlobalViews") \
+    .appName("TechFlight-Task3.1-Bronze-TempTables") \
     .getOrCreate()
 
-print("=== TASK 3.1: BRONZE LAYER WITH GLOBAL TEMPORARY VIEWS ===")
+print("=== TASK 3.1: BRONZE LAYER WITH TEMPORARY DELTA TABLES ===")
 
 # =================================================================
 # STEP 1: UNITY CATALOG SETUP
 # =================================================================
 
-print("\nSTEP 1: Setting up Unity Catalog context...")
-
-# Set catalog and schema context
 spark.sql("USE CATALOG techflight_catalog")
 spark.sql("""
     CREATE SCHEMA IF NOT EXISTS bronze_schema
-    COMMENT 'Bronze layer for raw ingested data - Medallion Architecture'
+    COMMENT 'Bronze layer for raw data - Medallion Architecture'
 """)
 spark.sql("USE SCHEMA bronze_schema")
 
-# Verify context
-context = spark.sql("SELECT CURRENT_CATALOG(), CURRENT_SCHEMA()").collect()
-print(f"✅ Context: {context[0][0]}.{context[0][1]}")
-
 # =================================================================
-# STEP 2: LOAD CSV FILES INTO DATAFRAMES
+# STEP 2: LOAD CSV FILES INTO DATAFRAMES (REQUIREMENT)
 # =================================================================
 
-print("\nSTEP 2: Loading CSV files into DataFrames...")
-
-# Update with your actual volume name
 VOLUME_PATH = "/Volumes/techflight_catalog/bronze_schema/your_volume_name"
 
-# Load Flights DataFrame
-flights_df = spark.read \
-    .option("header", "true") \
-    .option("inferSchema", "true") \
-    .csv(f"{VOLUME_PATH}/flights.csv")
+print("Loading CSV files into DataFrames with schema inference...")
 
-print(f"✅ Flights DataFrame: {flights_df.count()} rows loaded")
+# Load DataFrames (Assignment Requirement)
+flights_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/flights.csv")
+bookings_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/bookings.csv")
+passengers_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/passengers.csv")
+carriers_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/carriers.csv")
+airports_df = spark.read.option("header", "true").option("inferSchema", "true").csv(f"{VOLUME_PATH}/airports.csv")
 
-# Load Bookings DataFrame
-bookings_df = spark.read \
-    .option("header", "true") \
-    .option("inferSchema", "true") \
-    .csv(f"{VOLUME_PATH}/bookings.csv")
-
-print(f"✅ Bookings DataFrame: {bookings_df.count()} rows loaded")
-
-# Load Passengers DataFrame
-passengers_df = spark.read \
-    .option("header", "true") \
-    .option("inferSchema", "true") \
-    .csv(f"{VOLUME_PATH}/passengers.csv")
-
-print(f"✅ Passengers DataFrame: {passengers_df.count()} rows loaded")
-
-# Load Carriers DataFrame
-carriers_df = spark.read \
-    .option("header", "true") \
-    .option("inferSchema", "true") \
-    .csv(f"{VOLUME_PATH}/carriers.csv")
-
-print(f"✅ Carriers DataFrame: {carriers_df.count()} rows loaded")
-
-# Load Airports DataFrame
-airports_df = spark.read \
-    .option("header", "true") \
-    .option("inferSchema", "true") \
-    .csv(f"{VOLUME_PATH}/airports.csv")
-
-print(f"✅ Airports DataFrame: {airports_df.count()} rows loaded")
-
-print("\n✅ ALL 5 DATAFRAMES SUCCESSFULLY CREATED")
+print("✅ All DataFrames created with schema inference")
 
 # =================================================================
-# STEP 3: DISPLAY INFERRED SCHEMAS
+# STEP 3: DISPLAY SCHEMAS (REQUIREMENT)
 # =================================================================
 
-print("\nSTEP 3: Schema inference results...")
-
-print("\n--- FLIGHTS SCHEMA ---")
+print("\n--- SCHEMA INFERENCE RESULTS ---")
+print("Flights Schema:")
 flights_df.printSchema()
-
-print("\n--- BOOKINGS SCHEMA ---") 
+print("Bookings Schema:")
 bookings_df.printSchema()
 
-print("\n--- PASSENGERS SCHEMA ---")
-passengers_df.printSchema()
-
-print("\n--- CARRIERS SCHEMA ---")
-carriers_df.printSchema()
-
-print("\n--- AIRPORTS SCHEMA ---")
-airports_df.printSchema()
-
 # =================================================================
-# STEP 4: CREATE TEMPORARY VIEWS FIRST (FOR SPARK.SQL ACCESS)
+# STEP 4: CREATE TEMPORARY DELTA TABLES FOR CROSS-NOTEBOOK ACCESS
 # =================================================================
 
-print("\nSTEP 4: Creating temporary views for spark.sql access...")
+print("\nCreating temporary Delta tables for Silver layer access...")
 
-# Create regular temporary views first
-flights_df.createOrReplaceTempView("bronze_flights_temp")
-bookings_df.createOrReplaceTempView("bronze_bookings_temp")
-passengers_df.createOrReplaceTempView("bronze_passengers_temp")
-carriers_df.createOrReplaceTempView("bronze_carriers_temp")
-airports_df.createOrReplaceTempView("bronze_airports_temp")
+# Create temporary Delta tables (will be accessible by table name)
+flights_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_flights")
+bookings_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_bookings")
+passengers_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_passengers")
+carriers_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_carriers")
+airports_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("temp_bronze_airports")
 
-print("✅ Temporary views created for spark.sql operations")
+print("✅ Temporary Delta tables created:")
+print("   • temp_bronze_flights")
+print("   • temp_bronze_bookings") 
+print("   • temp_bronze_passengers")
+print("   • temp_bronze_carriers")
+print("   • temp_bronze_airports")
 
 # =================================================================
-# STEP 5: CREATE GLOBAL TEMPORARY VIEWS USING SPARK.SQL
+# STEP 5: CREATE TEMPORARY VIEWS (REQUIREMENT)
 # =================================================================
 
-print("\nSTEP 5: Creating global temporary views using spark.sql()...")
+print("\nCreating temporary views for inspection...")
 
-# Create global temporary views using spark.sql
+# Create temporary views from DataFrames (Assignment requirement)
+flights_df.createOrReplaceTempView("bronze_flights")
+bookings_df.createOrReplaceTempView("bronze_bookings")
+passengers_df.createOrReplaceTempView("bronze_passengers")
+carriers_df.createOrReplaceTempView("bronze_carriers")
+airports_df.createOrReplaceTempView("bronze_airports")
+
+print("✅ Temporary views created for inspection")
+
+# Verify views
+spark.sql("SHOW VIEWS LIKE 'bronze_*'").show()
+
+# =================================================================
+# STEP 6: SAMPLE DATA DISPLAY (DELIVERABLE)
+# =================================================================
+
+print("\n--- RAW DATA SAMPLES ---")
+print("Bronze Flights Sample:")
+spark.sql("SELECT * FROM bronze_flights LIMIT 3").show(truncate=False)
+
+print("Bronze Bookings Sample:")
+spark.sql("SELECT * FROM bronze_bookings LIMIT 3").show(truncate=False)
+
+# =================================================================
+# STEP 7: VERIFICATION
+# =================================================================
+
+print("\n--- VERIFICATION ---")
+# Check temporary tables exist
+spark.sql("SHOW TABLES LIKE 'temp_bronze_*'").show()
+
+# Row count verification
 spark.sql("""
-    CREATE GLOBAL TEMPORARY VIEW bronze_flights 
-    AS SELECT * FROM bronze_flights_temp
-""")
-print("✅ bronze_flights global view created")
-
-spark.sql("""
-    CREATE GLOBAL TEMPORARY VIEW bronze_bookings
-    AS SELECT * FROM bronze_bookings_temp  
-""")
-print("✅ bronze_bookings global view created")
-
-spark.sql("""
-    CREATE GLOBAL TEMPORARY VIEW bronze_passengers
-    AS SELECT * FROM bronze_passengers_temp
-""")
-print("✅ bronze_passengers global view created")
-
-spark.sql("""
-    CREATE GLOBAL TEMPORARY VIEW bronze_carriers
-    AS SELECT * FROM bronze_carriers_temp
-""")
-print("✅ bronze_carriers global view created")
-
-spark.sql("""
-    CREATE GLOBAL TEMPORARY VIEW bronze_airports
-    AS SELECT * FROM bronze_airports_temp
-""")
-print("✅ bronze_airports global view created")
-
-print("\n🌐 ALL GLOBAL TEMPORARY VIEWS CREATED USING SPARK.SQL!")
-
-# =================================================================
-# STEP 6: VERIFY GLOBAL TEMPORARY VIEWS
-# =================================================================
-
-print("\nSTEP 6: Verifying global temporary views...")
-
-# Show global temporary views
-global_views = spark.sql("SHOW VIEWS IN global_temp LIKE 'bronze_*'")
-print("📋 Global temporary views created:")
-global_views.show()
-
-# Verify row counts using spark.sql
-row_counts = spark.sql("""
-    SELECT 'bronze_flights' as dataset, COUNT(*) as row_count FROM global_temp.bronze_flights
+    SELECT 'temp_bronze_flights' as table_name, COUNT(*) as row_count FROM temp_bronze_flights
     UNION ALL
-    SELECT 'bronze_bookings' as dataset, COUNT(*) as row_count FROM global_temp.bronze_bookings
+    SELECT 'temp_bronze_bookings' as table_name, COUNT(*) as row_count FROM temp_bronze_bookings
     UNION ALL
-    SELECT 'bronze_passengers' as dataset, COUNT(*) as row_count FROM global_temp.bronze_passengers
+    SELECT 'temp_bronze_passengers' as table_name, COUNT(*) as row_count FROM temp_bronze_passengers
     UNION ALL
-    SELECT 'bronze_carriers' as dataset, COUNT(*) as row_count FROM global_temp.bronze_carriers
+    SELECT 'temp_bronze_carriers' as table_name, COUNT(*) as row_count FROM temp_bronze_carriers
     UNION ALL
-    SELECT 'bronze_airports' as dataset, COUNT(*) as row_count FROM global_temp.bronze_airports
-    ORDER BY dataset
-""")
+    SELECT 'temp_bronze_airports' as table_name, COUNT(*) as row_count FROM temp_bronze_airports
+""").show()
 
-print("📊 Row count verification:")
-row_counts.show()
-
-# =================================================================
-# STEP 7: SAMPLE DATA DISPLAY (RAW STATE)
-# =================================================================
-
-print("\nSTEP 7: Sample raw data from global temporary views...")
-
-print("--- BRONZE_FLIGHTS SAMPLE ---")
-flights_sample = spark.sql("SELECT * FROM global_temp.bronze_flights LIMIT 5")
-flights_sample.show(truncate=False)
-
-print("--- BRONZE_BOOKINGS SAMPLE ---")
-bookings_sample = spark.sql("SELECT * FROM global_temp.bronze_bookings LIMIT 5") 
-bookings_sample.show(truncate=False)
-
-print("--- BRONZE_PASSENGERS SAMPLE ---")
-passengers_sample = spark.sql("SELECT * FROM global_temp.bronze_passengers LIMIT 5")
-passengers_sample.show(truncate=False)
-
-print("--- BRONZE_CARRIERS SAMPLE ---")
-carriers_sample = spark.sql("SELECT * FROM global_temp.bronze_carriers LIMIT 5")
-carriers_sample.show(truncate=False)
-
-print("--- BRONZE_AIRPORTS SAMPLE ---")
-airports_sample = spark.sql("SELECT * FROM global_temp.bronze_airports LIMIT 5")
-airports_sample.show(truncate=False)
-
-# =================================================================
-# STEP 8: TASK 3.1 COMPLETION SUMMARY
-# =================================================================
-
-print("\n" + "="*70)
+print("\n🎉 TASK 3.1 COMPLETED!")
+print("✅ DataFrames created with schema inference")
+print("✅ Temporary views created for inspection")  
+print("✅ Temporary Delta tables saved for Silver layer access")
 print("🎉 TASK 3.1: BRONZE LAYER COMPLETED SUCCESSFULLY!")
 print("="*70)
 print("✅ REQUIREMENT 1: Data Loading")
